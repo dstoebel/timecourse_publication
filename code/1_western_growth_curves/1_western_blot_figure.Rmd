@@ -1,0 +1,184 @@
+---
+title: "western figure"
+author: "Josephine Adams"
+date: "07/07/2022"
+output: html_document
+---
+This file makes the plot for figure 1 in the paper which is the western blot plot including normalized RpoS levels and OD plot. It requires the set up that is done in `westernAnalysisSetUp.R`
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(patchwork)
+
+
+#This loads all the set up for making the RpoS levels figure & includes the needed libraries
+source("../helper functions/westernAnalysisSetUp.R") 
+```
+
+#plotting
+faceted plot 
+```{r}
+#make one table with all data from all 3 stresses 
+all_western_data <- merge(SP_allData,cold_allData, all = TRUE) %>% 
+  merge(osmo_allData, all = TRUE) %>% 
+  select(Trial, Time, OD, Genotype, Experiment, normalize, RpoSratio, exp_length)
+#dim(allData)
+#plot with facet
+rpoS_plot <- all_western_data %>%
+  filter(Genotype == "wt") %>%
+  #order the stresses as desired
+  mutate(Experiment = fct_relevel(
+    Experiment,
+    "Stationary Phase",
+    "High Osmolarity",
+    "Low Temperature"
+  )) %>%
+  ggplot(aes(x = Time, y = RpoSratio)) +
+  geom_point(alpha = 0.3) +
+  facet_wrap( ~ Experiment , scales = "free_x") + #scales are different for SP/cold & osmo
+  scale_y_log10() +
+  geom_smooth(se = FALSE)  +
+  xlab("Time (mins)") +
+  ylab("Normalized RpoS")
+
+rpoS_plot
+#ggsave("../../../outputs/graphs/rpos_levels_plot.jpeg")
+```
+
+#Plotting culture growth
+
+```{r}
+od_plot <- all_western_data %>%
+  filter(Genotype == "wt") %>%
+  #order the stresses as desired
+  mutate(Experiment = fct_relevel(
+    Experiment,
+    "Stationary Phase",
+    "High Osmolarity",
+    "Low Temperature"
+  )) %>%
+  ggplot(aes(x = Time, y = OD)) +
+  geom_point(alpha = 0.3) +
+  facet_wrap( ~ Experiment , scales = "free_x") + #scales are different for SP/cold & osmo
+  scale_y_log10(limits = c(0.3, 10)) +
+  #add a line with loess regression
+  geom_smooth(se = FALSE)  +
+  xlab("Time (mins)") +
+  ylab(expression(OD[600])) +
+  theme(strip.text.x = element_blank())
+
+od_plot
+
+```
+
+```{r}
+#make the two plots into one jpeg with lettered tags
+library(patchwork)
+rpoS_plot / od_plot + plot_annotation(tag_levels = 'A')
+
+
+ggsave("../../outputs/graphs/1_rpos_OD_levels_plot.jpeg", width = 6, height = 6)
+```
+
+###Find the time with max RpoS value
+```{r}
+times <- seq(0,300, 0.1)
+
+stationary_loess <- all_western_data %>%
+  filter(Genotype == "wt", Experiment == "Stationary Phase", RpoSratio > 0) %>% 
+  loess( log10(RpoSratio) ~ Time, data = .)
+
+stationary_prediction <- data.frame(times, prediction = 10^predict(stationary_loess, times)) 
+
+
+stationary_max <- stationary_prediction %>% 
+  slice_max(prediction) 
+
+
+stationary_max
+#Stationary phase reaches a max at 264.5 with value of 0.047
+
+stationary_max_level <- pull(stationary_max, prediction)
+
+stationary_prediction %>% 
+  filter(prediction > stationary_max_level/2) %>% 
+  slice_min(times)
+
+#During entry to stationary phase, half maximal RpoS is reached at 163 mins.
+```
+
+
+```{r}
+osmo_loess <- all_western_data %>%
+  filter(Genotype == "wt", Experiment == "High Osmolarity", RpoSratio > 0) %>% 
+  loess( log10(RpoSratio) ~ Time, data = .)
+
+osmo_prediction <- data.frame(times, prediction = 10^predict(osmo_loess, times))
+
+osmo_max <- osmo_prediction %>% 
+    slice_max(prediction)
+
+
+osmo_max
+#High osmo reaches a max at 50.2 with value of 0.0501
+
+osmo_max_level <- pull(osmo_max, prediction)
+
+osmo_prediction %>% 
+  filter(prediction > osmo_max_level/2) %>% 
+  slice_min(times)
+
+#Reaches half max at 30 mins
+
+```
+
+
+```{r}
+cold_loess <- all_western_data %>%
+  filter(Genotype == "wt", Experiment == "Low Temperature", RpoSratio > 0) %>% 
+  loess( log10(RpoSratio) ~ Time, data = .)
+
+cold_prediction <- data.frame(times, prediction = 10^predict(cold_loess, times))
+
+cold_max <- cold_prediction %>% 
+  slice_max(prediction)
+
+cold_max
+
+#Cold reaches a max at 239.3 min with values of 0.0236
+
+cold_max_level <- pull(cold_max, prediction)
+
+cold_prediction %>% 
+  filter(prediction > cold_max_level/2) %>% 
+  slice_min(times)
+
+#Reaches half max at 172 mins
+
+```
+
+
+## Finding RpoS levels at median onset time.
+
+For stationary phase, the median onset time is 181 minutes
+
+To find the % of maximal RpoS at the this time, use the `predict` function to get the predicted amount of RpoS at that time point, then calculate a percentage of the max amount
+```{r}
+100*(10^predict(stationary_loess, 181) / stationary_max$prediction)
+
+
+```
+
+For osmo, median onset time is 31 mins
+
+```{r}
+100*(10^predict(osmo_loess, 31) / osmo_max$prediction)
+
+```
+
+For cold, median onset time is 140 mins
+
+```{r}
+100*(10^predict(cold_loess, 140) / cold_max$prediction)
+```
+
+

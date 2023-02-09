@@ -1,0 +1,146 @@
+---
+title: "plot_all_genes"
+author: "Dan Stoebel"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(sicegar)
+library(pdftools)
+
+stationary_DESeq <-read.csv("../../outputs/DESeq_results_SP.csv") 
+osmo_DESeq <-read.csv("../../outputs/DESeq_results_osmo.csv") 
+cold_DESeq <-read.csv("../../outputs/DESeq_results_cold.csv")
+```
+
+This file tries to fit every DE gene by Sicegar, and plots the output. If there was a sicegar fit, then that fit is shown. Otherwise, the data are still shown, without a fit.
+
+```{r}
+sicegarGraphMap2 <- function(
+           dat,
+           type = "",
+           AIC = -10,
+           thresholdRatio = 0.75,
+           condition) {
+    gene = dat$geneName[1]
+    dat2 <- dat
+    dat <- dat %>% select(intensity, time)
+    dat <-
+      dat %>% arrange(time) #arranges by increasing time for reversal if counts are decreasing
+    #model fitting and categorization
+    Model <-
+      fitAndCategorize(
+        dataInput = dat,
+        threshold_t0_max_int = 1E10,
+        threshold_dsm_tmax_IntensityRatio = thresholdRatio,
+        threshold_AIC = AIC
+      )
+    #if ambiguous, check to see if decreasing (avg intensity at end is smaller than beginning), if so, then flip the counts so they are increasing and fit the model again
+    if (Model$summaryVector$decision == "ambiguous") {
+      if (mean(dat$intensity[dat$time == 0]) > mean(dat$intensity[dat$time == max(dat$time)])) {
+        dat$intensity = rev(dat$intensity) #reverses counts
+        Model <-
+          fitAndCategorize(
+            dataInput = dat,
+            threshold_t0_max_int = 1E10,
+            threshold_dsm_tmax_IntensityRatio = thresholdRatio,
+            threshold_AIC = AIC
+          )
+        #if sigmoidal, graph the sigmoidal curve
+        if (Model$summaryVector$decision == "sigmoidal") {
+          a <-
+            figureModelCurves(
+              dataInput = Model$normalizedInput,
+              sigmoidalFitVector = Model$sigmoidalModel,
+              showParameterRelatedLines = TRUE
+            ) + ggtitle(paste(gene, "Sigmoid:", type, sep = " "))
+        }
+        #if sigmoidal, graph the double sigmoidal curve
+        if (Model$summaryVector$decision == "double_sigmoidal") {
+          a <-
+            figureModelCurves(
+              dataInput = Model$normalizedInput,
+              doubleSigmoidalFitVector = Model$doubleSigmoidalModel,
+              showParameterRelatedLines = TRUE
+            ) + ggtitle(paste(gene, "Double_sigmoid:", type, sep = " "))
+        }
+        #if ambiguous, just graph points with no curve (color corresponds to short or long time course)
+        if (Model$summaryVector$decision == "ambiguous") {
+          a <-
+            ggplot(dat2, aes(
+              x = time,
+              y = intensity,
+              color = replicate
+            )) + geom_point() + ggtitle(paste(gene, "(ambiguous)", sep = " "))
+        }
+      }
+      else {
+        a <-
+          ggplot(dat2, aes(x = time, y = intensity, color = replicate)) + geom_point() + ggtitle(paste(gene, "(ambiguous)", sep =
+                                                                                                         " "))
+      }
+    }
+    if (Model$summaryVector$decision == "sigmoidal") {
+      a <-
+        figureModelCurves(
+          dataInput = Model$normalizedInput,
+          sigmoidalFitVector = Model$sigmoidalModel,
+          showParameterRelatedLines = TRUE
+        ) + ggtitle(paste(gene, "Sigmoid:", type, sep = " "))
+    }
+    if (Model$summaryVector$decision == "double_sigmoidal") {
+      a <-
+        figureModelCurves(
+          dataInput = Model$normalizedInput,
+          doubleSigmoidalFitVector = Model$doubleSigmoidalModel,
+          showParameterRelatedLines = TRUE
+        ) + ggtitle(paste(gene, "Double Sigmoid:", type, sep = " "))
+    }
+    ggsave(
+      paste(
+        "../../outputs/supplemental/sicegar/",
+        condition,
+        "/",
+        condition,
+        "_",
+        gene,
+        ".pdf",
+        sep = ""
+      ),
+      plot = a
+    )
+  }
+```
+
+
+```{r}
+osmo_DESeq %>% 
+  split(.$geneName) %>% 
+  map(safely(~sicegarGraphMap2(dat=.,AIC=5, thresholdRatio = 0.65, condition = "osmo")), .progress = TRUE)
+
+pdftools::pdf_combine(input =
+list.files(path = "../../outputs/supplemental/sicegar/osmo/", full.names=TRUE,pattern=".pdf"),
+output = "../../outputs/supplemental/sicegar/osmo_all_graphs.pdf")
+
+
+cold_DESeq %>% 
+  split(.$geneName) %>% 
+  map(safely(~sicegarGraphMap2(dat=.,AIC=5, thresholdRatio = 0.65, condition = "cold")), .progress = TRUE)
+
+pdftools::pdf_combine(input =
+list.files(path = "../../outputs/supplemental/sicegar/cold/", full.names=TRUE,pattern=".pdf"),
+output = "../../outputs/supplemental/sicegar/cold_all_graphs.pdf")
+
+stationary_DESeq %>% 
+  split(.$geneName) %>% 
+  map(safely(~sicegarGraphMap2(dat=.,AIC=5, thresholdRatio = 0.65, condition = "stationary")), .progress = TRUE)
+
+pdftools::pdf_combine(input =
+list.files(path = "../../outputs/supplemental/sicegar/stationary", full.names=TRUE,pattern=".pdf"),
+output = "../../outputs/supplemental/sicegar/stationary_all_graphs.pdf")
+
+```
+
+https://community.rstudio.com/t/r-for-merging-pdf-files/119434

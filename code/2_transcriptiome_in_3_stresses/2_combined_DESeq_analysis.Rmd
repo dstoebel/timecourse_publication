@@ -1,0 +1,181 @@
+---
+title: "Combined DESeq analysis"
+author: "Dan Stoebel"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+This file calls `data_wrangling.R`, which does all of the hard work. Then outputs a combined file that will be useful for future work as well as for a supplementary table.
+
+```{r}
+library(eulerr)
+source(file = "../helper functions/data_wrangling.R")
+```
+
+The DESeq2 output is in `cold_sig_genes`, `SP_sig_genes`, and `osmo_sig_genes`. These objects were created by the code in the `data_wrangling.R` file sourced above.
+
+Write the gene names and p-values in each dcondition to file. We do not write the l2fc or baseMean to file because it isn't clear to me what those values refer to, that we are testing a model about the interaction of time & genotype. This isn't a simple one factor, two conditions analysis. 
+
+```{r}
+full_DEseq_results <- full_join(
+  SP_sig_genes,
+  osmo_sig_genes,
+  by = c("bNum", "name", "GeneID"),
+  suffix = c("_sp", "_osmo")
+) %>%
+  full_join(cold_sig_genes, by = c("bNum", "name", "GeneID"))  %>%
+  select(contains(c("bNum", "name", "geneID", "padj"))) %>%
+  dplyr::rename(padj_cold = padj,
+                entrez_GeneID = GeneID) %>%
+  mutate(
+    sig_sp = padj_sp < 0.01,
+    sig_osmo = padj_osmo < 0.01,
+    sig_cold = padj_cold < 0.01
+  ) %>%
+  write_csv("../../outputs/combined_deseq_analysis.csv")
+
+#Number sig in stationary phase
+full_DEseq_results %>% 
+  filter(sig_sp) %>% 
+  tally()
+
+#Number sig in high osmolarity
+full_DEseq_results %>% 
+  filter(sig_osmo) %>% 
+  tally()
+
+#Number sig in low temp
+full_DEseq_results %>% 
+  filter(sig_cold) %>% 
+  tally()
+
+
+```
+
+Makes the venn diagram in fig 2. 
+
+```{r}
+
+
+sig_genes <- full_DEseq_results %>% 
+  select(name, contains("sig")) 
+
+# The euler function can't handle the NA for a p-value, so I need to convert all of the NAs to FALSE (i.e. a NA is not significantly DE) to make the Venn diagram.
+
+fit <- sig_genes %>% 
+  replace_na(list(
+    sig_sp = FALSE,
+    sig_osmo = FALSE,
+    sig_cold = FALSE
+  )) %>% 
+  select(contains("sig")) %>%
+  eulerr::euler()
+
+
+
+```
+
+
+plotting & save to file
+```{r}
+pdf(file = "../../outputs/graphs/2_diff_genes_venn_diagram.pdf", width = 8, height = 5)
+plot(fit,
+     quantities = TRUE,
+     legend = FALSE,
+     labels = FALSE)
+dev.off()
+```
+
+
+```{r}
+library(readxl)
+source(file = "../helper functions/genesets.R")
+
+#Reading in external sources
+chIP_data <- read_xlsx("../../data/other/chIpSeq_wong_etal.xlsx") %>% unique()
+weber_genes <- read_xlsx("../../data/other/weber_etal_table1.xlsx") %>%
+  rename(name = geneName)
+```
+
+
+
+ChIP data file was manualy created by looking at supplementary table 3 in the Wong et al. paper. We took the bNums that were red in the plus and minus strands as well as any genes that appeared as regulated genes in operon. This list was checked. It should be noted that this data, while curated in stationary phase, was made in a different environment: we did our experiment in LB and they did theirs in minimal media. However, since we are attempting to look at the CORE genes regulated by RpoS we decided this would be alright. Made this list manually two days in a row to check that everything looked alright 
+```{r}
+#This chunk doesn't need to be run- it is just a check that our manual work at extracting the ChIP data was okay.
+
+# checking <- read_xlsx("../../data/other/checking_ChIP.xlsx")%>% unique()
+# nrow(chIP_data)
+# nrow(checking)
+# 
+# check1 <- anti_join(chIP_data,checking, by = "bNum")
+# check2 <- anti_join(checking,chIP_data, by = "bNum")
+#they are the same
+```
+
+
+```{r}
+#The tibble shared_all_three has the genes that were DE in all three conditions
+
+shared_all_three <- full_DEseq_results %>% 
+  filter(sig_sp, sig_osmo, sig_cold) 
+
+
+tally(shared_all_three) #146 genes DE in all conditions
+
+semi_join(shared_all_three,chIP_data, by = "bNum") %>% 
+  tally() #of those 146, 48 are directly bound by ChIP
+
+semi_join( weber_genes, shared_all_three, by = "bNum") %>% 
+  tally() #81 genes shared between our core and that of Weber et al.
+
+
+
+```
+
+# GO analysis
+
+##PANTHER Analysis files
+```{r}
+
+full_DEseq_results %>%
+  filter(sig_cold) %>%
+  dplyr::select(entrez_GeneID) %>%
+  write.table(
+    file = "../../outputs/GO/all_cold_GO_genes.txt" ,
+    append = FALSE,
+    sep = "\t”",
+    row.names = FALSE ,
+    col.names = FALSE,
+    quote = FALSE
+  )
+
+
+full_DEseq_results %>%
+  filter(sig_sp) %>%
+  dplyr::select(entrez_GeneID) %>%
+  write.table(
+    file = "../../outputs/GO/all_SP_GO_genes.txt" ,
+    append = FALSE,
+    sep = "\t”",
+    row.names = FALSE ,
+    col.names = FALSE,
+    quote = FALSE
+  )
+
+full_DEseq_results %>%
+  filter(sig_osmo) %>%
+  dplyr::select(entrez_GeneID) %>%
+  write.table(
+    file = "../../outputs/GO/all_osmo_GO_genes.txt" ,
+    append = FALSE,
+    sep = "\t”",
+    row.names = FALSE ,
+    col.names = FALSE,
+    quote = FALSE
+  )
+
+```
+
+These files are then run via the web interface to PANTHER.
+
+

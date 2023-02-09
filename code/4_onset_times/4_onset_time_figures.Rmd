@@ -1,0 +1,505 @@
+---
+title: "onset times figure"
+author: "Josephine Adams"
+date: "07/07/2022"
+output: html_document
+---
+This file makes the plot for figure 3 the onset time plot of all genes and then just the sens/insens ones. It uses some setup done in `onsetTimesHelperFunctions.R`
+
+Note that this file assumes that Sicegar has been run on all of the data sets. If it hasn't it will need to be. Sicegar can be run by uncommenting the code block near the end of `data_wrangling.R`
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(patchwork)
+theme_set(theme_classic())
+
+# all necessary libraries are run in source file below
+source(file="../helper functions/onsetTimesHelperFunctions.R")
+
+```
+
+#adding sensitivity profiles to sicegar data using helper function
+```{r}
+
+allOnTimes<-sensitivitySep(sensitivity, all_sicegar_list)
+#102 sensitive and 32 insensitive total from stationary phase
+
+
+gene_sensitivity <- sensitivity %>% 
+  select(geneName, sensitivity) %>% 
+  filter(sensitivity != "nsRegulation") 
+
+gene_onset_sensitivity <- all_sicegar_list %>% 
+  left_join(gene_sensitivity, by = "geneName") %>%
+  mutate(
+    Experiment = fct_relevel(
+      Experiment,
+      "Stationary Phase",
+      "High Osmolarity",
+      "Low Temperature"
+    ),
+    sensitivity = case_when(
+      sensitivity == "sensitive" ~ "Sensitive",
+      sensitivity == "linear" ~ "Linear",
+      sensitivity == "insensitive" ~ "Insensitive",
+      TRUE ~ sensitivity
+    ),
+    sensitivity = fct_relevel(sensitivity,
+                              "Sensitive",
+                              "Linear",
+                              "Insensitive")
+  )
+
+
+genes_per_exp <- gene_onset_sensitivity %>%
+  filter(!is.na(value)) %>%
+  count(Experiment)
+
+```
+
+
+## Plotting onset time for each experiment, with time on the x-axis
+```{r}
+allOnset_flipped <- gene_onset_sensitivity %>%
+  filter(!is.na(value)) %>%
+  mutate(Experiment = fct_relevel(Experiment, "Low Temperature", "High Osmolarity", "Stationary Phase")) %>% 
+  ggplot(aes(x = value, y = Experiment )) +
+  geom_violin(draw_quantiles = 0.5) +
+  geom_text(data = genes_per_exp, aes(x = -40, y = Experiment,  label = paste("n =",n)), size = 3) +
+  # geom_violin(scale = "count") +
+  # geom_boxplot(width = 0.05,
+  #              outlier.shape = NA,
+  #              coef = 0) +
+  #geom_jitter(alpha = 0.3, height = 0) +
+  #geom_beeswarm(alpha = 0.7) +
+  ylab("Stress") +
+  xlab("Onset Time (mins)") + 
+  xlim(-50, 450) +
+  theme(legend.position = "none") 
+
+allOnset_annotated_flipped <- allOnset_flipped +
+  geom_segment(data = tibble(Experiment = "Stationary Phase", y = 1, x = 360, yend = 2, xend = 360), aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_segment(data = tibble(Experiment = "Stationary Phase", y = 2, x = 390, yend = 3, xend = 390), aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_segment(data = tibble(Experiment = "Stationary Phase", y = 1, x = 420, yend = 3, xend = 420), aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_text(data = tibble(Experiment = "Stationary Phase" , y = 1.5, x = 370, lab = "***"), aes(x = x, y = y, label = lab), angle = 90) +
+  geom_text(data = tibble(Experiment = "Stationary Phase" , y = 2.5, x = 400, lab = "***"), aes(x = x, y = y, label = lab), angle = 90) +
+  geom_text(data = tibble(Experiment = "Stationary Phase" , y = 2, x = 430, lab = "***"), aes(x = x, y = y, label = lab), angle = 90) +
+  NULL
+
+allOnset_annotated_flipped
+```
+
+
+#confidence intervals for median onset times 
+SP
+```{r}
+library(infer)
+gene_onset_sensitivity %>% 
+    filter(!is.na(value), Experiment == "Stationary Phase") %>% 
+  specify(response = value) %>%
+  generate(reps = 1000, type = "bootstrap") %>% 
+  calculate(stat = "median") %>% 
+  get_ci(level = .95)  
+
+
+```
+osmo
+```{r}
+gene_onset_sensitivity %>% 
+    filter(!is.na(value), Experiment == "High Osmolarity") %>% 
+  specify(response = value) %>%
+  generate(reps = 1000, type = "bootstrap") %>% 
+  calculate(stat = "median") %>% 
+  get_ci(level = .95)  
+```
+
+cold
+```{r}
+gene_onset_sensitivity %>% 
+    filter(!is.na(value), Experiment == "Low Temperature") %>% 
+  specify(response = value) %>%
+  generate(reps = 1000, type = "bootstrap") %>% 
+  calculate(stat = "median") %>% 
+  get_ci(level = .95) 
+
+```
+## Compare median onset time to time RpoS reached half-maximal levels.
+
+```{r}
+time_summary <- read_excel("../../data/onset times.xlsx") %>% 
+    mutate(Experiment = fct_relevel(
+    Experiment,
+    "Stationary Phase",
+    "High Osmolarity",
+    "Low Temperature"
+  )) %>% 
+  mutate(lower_CI = as.numeric(lower_CI),
+         upper_CI = as.numeric(upper_CI))
+
+rpoS_and_med_gene_onset <- time_summary %>% 
+  
+  ggplot() +
+  geom_pointrange(
+    aes(
+      y = Experiment,
+      x = half_max,
+      xmax = upper_CI,
+      xmin = lower_CI,
+      col = molecule
+    ),
+    size = .4,
+    na.rm = TRUE,
+    position = position_dodge(width = .2)
+  ) +
+  scale_color_grey(labels = c("gene onset", "RpoS half-max")) +
+  labs(x = "time (mins)") +
+  theme(legend.title = element_blank()) +
+  NULL
+
+rpoS_and_med_gene_onset
+```
+
+
+### Save the two plots as a figure
+```{r}
+allOnset_annotated_flipped / rpoS_and_med_gene_onset + plot_annotation(tag_levels = 'A') + plot_layout(height = c(4,4))
+
+ggsave("../../outputs/graphs/4_onset_times_conditions.jpg")
+```
+
+
+### Plot onset time for each sensitivity class for each environment
+```{r}
+genes_per_sensitivity_exp <- gene_onset_sensitivity %>%
+  filter(!is.na(value), !is.na(sensitivity)) %>%
+  count(sensitivity, Experiment)
+
+sens_onset_facet_flipped <- gene_onset_sensitivity %>%
+  mutate(sensitivity = fct_relevel(sensitivity, "Insensitive", "Linear", "Sensitive")) %>% 
+  filter(!is.na(value),!is.na(sensitivity)) %>%
+  ggplot(aes(y = sensitivity , x = value)) +
+  geom_violin(draw_quantiles = 0.5) +
+  geom_text(data = genes_per_sensitivity_exp,
+            aes(
+              y = sensitivity,
+              x = -40,
+              label = paste("n = ", n)
+            ),
+            size = 3) +
+  # geom_violin(scale = "count") +
+  # geom_boxplot(width = 0.05,
+  #              outlier.shape = NA,
+  #              coef = 0) +
+  #geom_jitter(alpha = 0.3, height = 0) +
+  #geom_beeswarm(alpha = 0.7) +
+  ylab("Sensitivity class") +
+  xlab("Onset Time (mins)") +
+  xlim(-50, 450) +
+  theme(legend.position = "none") + 
+  facet_wrap(~ factor(Experiment, levels = c("Stationary Phase", "High Osmolarity","Low Temperature")), ncol = 1
+             ) 
+
+sens_onset_facet_annotated_flipped <- sens_onset_facet_flipped +
+  geom_segment(data = tibble(Experiment = "Stationary Phase", y = 3, x = 380, yend = 2, xend = 380), aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_segment(data = tibble(Experiment = "Stationary Phase", y = 1, x = 420, yend = 3, xend = 420), aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_text(data = tibble(Experiment = "Stationary Phase" , y = 2.5, x = 390, lab = "***"), aes(x = x, y = y, label = lab), angle = 90) +
+  geom_text(data = tibble(Experiment = "Stationary Phase" , y = 2, x = 430, lab = "***"), aes(x = x, y = y, label = lab), angle = 90) +
+  NULL
+
+sens_onset_facet_annotated_flipped 
+
+
+ggsave("../../outputs/graphs/5_onset_times_sensitivity.jpeg")
+
+```
+
+
+
+
+
+
+
+General info like how many sensitive and insensitive genes and what are the median onset times
+
+
+```{r}
+gene_onset_sensitivity %>% 
+  filter(!is.na(value)) %>% 
+  count(Experiment)
+```
+We see that there are 278 genes with onset times in high osmolarity, 177 in low temp, and 537 in stationary phase.
+
+A more detailed breakdown on the counts:
+
+```{r}
+gene_onset_sensitivity %>% 
+    filter(!is.na(value)) %>% 
+  count(Experiment, sensitivity)
+```
+
+find median onset times for all genes for all three stressors
+```{r}
+gene_onset_sensitivity %>% 
+    filter(!is.na(value)) %>% 
+  group_by(Experiment) %>% 
+  summarise(med_onset_time = median(value))
+```
+
+test for difference in pairs of medians using 
+```{r}
+
+library(infer)
+
+test_pair_medians <- function(conditions) {
+
+  d_hat <- gene_onset_sensitivity %>% 
+    filter(!is.na(value), Experiment %in% conditions) %>% 
+  specify(value ~ Experiment) %>%
+  calculate(stat = "diff in medians", order = conditions)
+
+gene_onset_sensitivity %>%
+    filter(!is.na(value), Experiment %in% conditions) %>%
+  specify(value ~ Experiment) %>%
+  hypothesize(null = "independence") %>%
+   generate(reps = 3000, type = "permute") %>%
+  calculate(stat = "diff in medians", order = conditions) %>%
+  get_p_value(obs_stat = d_hat, direction = "two-sided")
+}
+
+test_pair_medians(conditions = c("Stationary Phase", "High Osmolarity"))
+test_pair_medians(conditions = c("Low Temperature", "High Osmolarity"))
+test_pair_medians(conditions = c("Stationary Phase", "Low Temperature"))
+
+
+```
+
+
+find median onset times for each sensitivity class for all 3 stressors
+```{r}
+gene_onset_sensitivity %>% 
+    filter(!is.na(value)) %>% 
+  group_by(Experiment, sensitivity) %>% 
+  summarise(med_onset_time = median(value),
+            n = n())
+```
+
+
+Lets compare onset times of the different classes 
+```{r}
+library(infer)
+
+test_pair_medians <- function(condition, sensitivity_pair) {
+
+    d_hat <- gene_onset_sensitivity %>% 
+    filter(!is.na(value), Experiment == condition, sensitivity %in% sensitivity_pair) %>%
+  specify(value ~ sensitivity) %>% 
+  calculate(stat = "diff in medians", order = sensitivity_pair)
+
+gene_onset_sensitivity %>% 
+    filter(!is.na(value), Experiment == condition, sensitivity %in% sensitivity_pair) %>%
+  specify(value ~ sensitivity) %>% 
+  hypothesize(null = "independence") %>%
+   generate(reps = 3000, type = "permute") %>%
+  calculate(stat = "diff in medians", order = sensitivity_pair) %>% 
+  get_p_value(obs_stat = d_hat, direction = "two-sided")
+}
+
+
+
+
+p_osmo_ls <- test_pair_medians(condition = "High Osmolarity", sensitivity_pair = c("Linear", "Sensitive")) 
+
+p_osmo_is <- test_pair_medians(condition = "High Osmolarity", sensitivity_pair = c("Insensitive", "Sensitive")) 
+
+p_osmo_li <- test_pair_medians(condition = "High Osmolarity", sensitivity_pair = c("Linear", "Insensitive"))
+
+
+p_sp_ls <- test_pair_medians(condition = "Stationary Phase", sensitivity_pair = c("Linear", "Sensitive"))
+
+p_sp_is <- test_pair_medians(condition = "Stationary Phase", sensitivity_pair = c("Insensitive", "Sensitive"))
+
+p_sp_li <- test_pair_medians(condition = "Stationary Phase", sensitivity_pair = c("Linear", "Insensitive"))
+
+
+p_cold_ls <- test_pair_medians(condition = "Low Temperature", sensitivity_pair = c("Linear", "Sensitive"))
+
+p_cold_is <- test_pair_medians(condition = "Low Temperature", sensitivity_pair = c("Insensitive", "Sensitive"))
+
+p_cold_li <- test_pair_medians(condition = "Low Temperature", sensitivity_pair = c("Linear", "Insensitive"))
+
+p.adjust(c(p_osmo_ls, p_osmo_is, p_osmo_li, p_sp_ls, p_sp_is, p_sp_li, p_cold_ls, p_cold_is, p_cold_li), method = "fdr")
+
+```
+So we see that the only significant differences in medians are between linear and sensitive, and sensitive and insensitive in stationary phase. All other comparisons are not-significant
+
+
+
+
+
+
+Not used- a different way to visualize the onset times. 
+```{r}
+
+# source("../helper functions/westernAnalysisSetUp.R") 
+# 
+# 
+# all_western_data <- merge(SP_allData,cold_allData, all = TRUE) %>% 
+#   merge(osmo_allData, all = TRUE) %>% 
+#   select(Trial, Time, OD, Genotype, Experiment, normalize, RpoSratio, exp_length) %>% 
+#     filter(Genotype == "wt") %>%
+#   #order the stresses as desired
+#   mutate(Experiment = fct_relevel(
+#     Experiment,
+#     "Stationary Phase",
+#     "High Osmolarity",
+#     "Low Temperature"
+#   )) 
+# 
+#   
+#   
+# rpoS_plot <- ggplot() +
+#     geom_rect(data = time_summary, aes(xmin = lower_CI, xmax = upper_CI, ymin = 1e-5, ymax = 1e-1), fill = "lightgray") +
+#   geom_smooth(data = all_western_data, aes(x = Time, y = RpoSratio), se = FALSE)  +
+#   facet_wrap( ~ Experiment , scales = "free_x") + #scales are different for SP/cold & osmo
+#   #scale_y_log10() +
+#   xlab("Time (mins)") +
+#   ylab("Normalized RpoS") 
+# 
+# rpoS_plot
+
+
+
+
+```
+
+
+
+## Test correlation of onset times by randomization using randomization
+
+```{r}
+set.seed(2022)
+sp_osmo_complete <- gene_onset_sensitivity %>% 
+  pivot_wider(names_from = Experiment, values_from = value) %>% 
+  filter(!is.na(`Stationary Phase`), !is.na(`High Osmolarity`))
+
+tally(sp_osmo_complete)
+
+sp_osmo_corr_hat <- sp_osmo_complete %>% 
+  specify(`Stationary Phase` ~ `High Osmolarity`) %>% 
+  calculate(stat = "correlation")
+
+
+  sp_osmo_complete %>% 
+  specify(`Stationary Phase` ~ `High Osmolarity`) %>% 
+  hypothesize(null = "independence") %>% 
+    generate(reps = 10000, type = "permute") %>% 
+  calculate(stat = "correlation") %>% 
+    get_p_value(sp_osmo_corr_hat, direction = "two-sided")
+
+sp_lowt_complete <- gene_onset_sensitivity %>% 
+  pivot_wider(names_from = Experiment, values_from = value) %>% 
+  filter(!is.na(`Stationary Phase`), !is.na(`Low Temperature`))
+
+tally(sp_lowt_complete)
+
+  sp_lowt_corr_hat <- sp_lowt_complete %>% 
+  specify(`Stationary Phase` ~ `Low Temperature`) %>% 
+  calculate(stat = "correlation")
+
+  sp_lowt_complete %>% 
+  specify(`Stationary Phase` ~ `Low Temperature`) %>% 
+  hypothesize(null = "independence") %>% 
+    generate(reps = 10000, type = "permute") %>% 
+  calculate(stat = "correlation") %>% 
+    get_p_value(sp_lowt_corr_hat, direction = "two-sided")
+
+  osmo_lowt_complete <- gene_onset_sensitivity %>% 
+  pivot_wider(names_from = Experiment, values_from = value) %>% 
+  filter(!is.na(`High Osmolarity`), !is.na(`Low Temperature`))
+  
+  tally(osmo_lowt_complete)
+  
+  osmo_lowt_corr_hat <- osmo_lowt_complete %>% 
+  specify(`High Osmolarity` ~ `Low Temperature`) %>% 
+  calculate(stat = "correlation")
+
+  osmo_lowt_complete %>% 
+  specify(`High Osmolarity` ~ `Low Temperature`) %>% 
+  hypothesize(null = "independence") %>% 
+    generate(reps = 10000, type = "permute") %>% 
+  calculate(stat = "correlation") %>% 
+    get_p_value(osmo_lowt_corr_hat, direction = "two-sided")
+
+  
+```
+For stationary vs. osmolarity, n = `r tally(sp_osmo_complete)`, r = `r sp_osmo_corr_hat`
+ 
+For stationary vs. low temp, n = `r tally(sp_lowt_complete)`, r = `r sp_lowt_corr_hat`
+
+For osmolarity vs. low temp, n = `r tally(osmo_lowt_complete)`, r = `r osmo_lowt_corr_hat`
+
+
+
+Plot these correlations
+
+```{r}
+onset_sp_osmo <- gene_onset_sensitivity %>% 
+  pivot_wider(names_from = Experiment, values_from = value) %>% 
+  filter(!is.na(`Stationary Phase`), !is.na(`High Osmolarity`)) %>% 
+  ggplot() +
+  geom_point(aes(x = `Stationary Phase`, y = `High Osmolarity`)) +  
+  xlab("Onset time (mins) \n in Stationary Phase") +
+  ylab("Onset Time (mins) in High Osmolarity") +
+  xlim(0,305) +
+  labs(tag = "A") 
+
+onset_sp_cold <- gene_onset_sensitivity %>% 
+  pivot_wider(names_from = Experiment, values_from = value) %>% 
+  filter(!is.na(`Stationary Phase`), !is.na(`Low Temperature`)) %>% 
+  ggplot() +
+  geom_point(aes(x = `Stationary Phase`, y = `Low Temperature`)) +  
+  xlab("Onset time (mins) \n in Stationary Phase") +
+  ylab("Onset Time (mins) in Low Temperature") +
+  labs(tag = "B") 
+
+onset_osmo_cold <- gene_onset_sensitivity %>% 
+  pivot_wider(names_from = Experiment, values_from = value) %>% 
+    filter(!is.na(`High Osmolarity`), !is.na(`Low Temperature`)) %>% 
+  ggplot() +
+  geom_point(aes(x = `High Osmolarity`, y = `Low Temperature`)) +  
+  xlab("Onset Time (mins) \n in High Osmolarity") +
+  ylab("Onset time (mins) in Low Temperature") +
+  labs(tag = "C") 
+
+
+
+onset_sp_osmo + onset_sp_cold + onset_osmo_cold
+
+ggsave("../../outputs/graphs/6_correlations.png", width = 10, height = 5)
+
+```
+
+
+Add the gene onset time to the table that has if the gene was significant.
+```{r}
+all_genes <- read_csv("../../outputs/combined_deseq_analysis.csv")
+
+
+all_sicegar_list
+
+sicegar_wide <- all_sicegar_list %>% 
+  pivot_wider(names_from = "Experiment") %>% 
+  dplyr::rename(onset_sp = `Stationary Phase`,
+                onset_osmo = `High Osmolarity`,
+                onset_cold = `Low Temperature`)
+
+
+all_genes %>% 
+  left_join(sicegar_wide, by = c("name" = "geneName")) %>% 
+  write_csv("../../outputs/combined_deseq_sicegar.csv")
+
+```
+
+
+
+

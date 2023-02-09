@@ -1,0 +1,166 @@
+---
+title: "Graphing examples of each kind of gene dynamic"
+author: "Dan Stoebel"
+date: "11 Jan 2023"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(sicegar)
+library(patchwork)
+
+SP_DESeq <-read_csv("../../outputs/DESeq_results_SP.csv") 
+osmo_DESeq <-read_csv("../../outputs/DESeq_results_osmo.csv") 
+cold_DESeq <-read_csv("../../outputs/DESeq_results_cold.csv")
+
+```
+
+
+
+
+```{r}
+
+Model_sig <- SP_DESeq %>% 
+  filter(geneName =="dps") %>%  
+  select(intensity, time) %>% 
+  fitAndCategorize(threshold_t0_max_int=1E10, threshold_dsm_tmax_IntensityRatio = 0.65, threshold_AIC=5)
+
+
+sigmoidal_example <- figureModelCurves(
+  dataInput = Model_sig$normalizedInput,
+  sigmoidalFitVector = Model_sig$sigmoidalModel,
+  showParameterRelatedLines = FALSE,
+  xlabelText = "time (mins)",
+  ylabelText = "Normalized mRNA amount"
+) +
+  ggtitle("Sigmoidal: dps entering stationary phase") +
+  geom_vline(
+    aes(
+      xintercept = Model_sig$summaryVector$midPoint_x,
+    ),
+    color = "blue",
+    linetype = "dashed"
+  ) +
+  theme_set(theme_classic())
+  
+
+sigmoidal_example
+
+
+#Double sigmoid / impulse
+Model_double_sig <- osmo_DESeq %>% 
+  filter(geneName == "osmE") %>% 
+  select(intensity, time) %>% 
+  fitAndCategorize(threshold_t0_max_int=1E10, threshold_dsm_tmax_IntensityRatio = 0.65, threshold_AIC=5)
+
+double_sigmoidal_example <- figureModelCurves(
+  dataInput = Model_double_sig$normalizedInput,
+  doubleSigmoidalFitVector = Model_double_sig$doubleSigmoidalModel,
+  showParameterRelatedLines = FALSE,
+    xlabelText = "time (mins)",
+  ylabelText = "Normalized mRNA amount"
+) +
+  ggtitle("Double sigmoidal: osmE in high osmolarity") +
+  geom_vline(
+    aes(
+      xintercept = Model_double_sig$summaryVector$midPoint1_x,
+    ),
+    color = "blue",
+    linetype = "dashed"
+  ) +
+  theme_set(theme_classic())
+
+double_sigmoidal_example
+
+Model_ambig <- osmo_DESeq %>% 
+  filter(geneName == "fbaB") %>% 
+   select(intensity, time) %>% 
+  ggplot() +
+  geom_point(aes(x = time, y = intensity)) +
+  labs(  x = "time (mins)",
+  y = "Normalized mRNA amount")+
+  ggtitle("Ambiguous: fbaB in high osmolarity") +
+  theme_set(theme_classic())
+
+Model_ambig
+  
+  
+  
+
+sigmoidal_example / double_sigmoidal_example / Model_ambig + plot_annotation(tag_levels = 'A')
+
+ggsave("../../outputs/graphs/3_examples.jpg", width = 8, height = 11)
+
+
+```
+
+
+#Other genes I've explored below
+
+```{r}
+example_gene <- "rssB"
+
+source("../../code/helper functions/onsetTimesHelperFunctions.R")
+
+SP_DESeq %>% 
+  filter(geneName == example_gene) %>% 
+  sicegarGraphMap()
+
+osmo_DESeq %>% 
+  filter(geneName == example_gene) %>% 
+  sicegarGraphMap()
+
+cold_DESeq %>% 
+  filter(geneName == example_gene) %>% 
+  sicegarGraphMap()
+
+
+```
+
+
+```{r}
+
+#Sigmoidal
+SP_DESeq %>% 
+  filter(geneName == "dps") %>% 
+  sicegarGraphMap()
+
+SP_DESeq %>% 
+  filter(geneName == "otsB") %>% 
+  sicegarGraphMap()
+
+#Double sigmoid / impulse
+osmo_DESeq %>% 
+  filter(geneName == "osmE") %>% 
+  sicegarGraphMap()
+
+#Sigmoidal
+cold_DESeq %>% 
+  filter(geneName == "osmC" ) %>% 
+  sicegarGraphMap()
+
+cold_DESeq %>% 
+  filter(geneName == "otsB" ) %>% 
+  sicegarGraphMap()
+
+#Ambiguous
+osmo_DESeq %>% 
+  filter(geneName == "fbaB") %>% 
+  sicegarGraphMap()
+
+#Impulse
+osmo_DESeq %>% 
+  filter(geneName == "otsB") %>% 
+  sicegarGraphMap()
+
+osmo_DESeq %>% 
+  filter(geneName == "bolA") %>% 
+  sicegarGraphMap()
+
+```
+
+
+
+
