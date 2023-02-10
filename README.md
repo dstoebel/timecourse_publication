@@ -2,6 +2,9 @@
 
 
 
+[![DOI](https://zenodo.org/badge/599289090.svg)](https://zenodo.org/badge/latestdoi/599289090)
+
+
 ## Quick Start: 
 1. code - contains the code for basic data wrangling, figures, other results & analysis such as statistical testing, and helper functions.
 2. data - contains all the data files for data analysis, including raw data in htseq-count tables, western blot qunatifcation data, and files containing information of sensitivity 3. profiles.
