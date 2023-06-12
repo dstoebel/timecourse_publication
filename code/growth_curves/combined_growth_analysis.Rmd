@@ -1,0 +1,286 @@
+---
+title: "combined_growth_analysis"
+author: "Dan Stoebel"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(growthrates)
+library(patchwork)
+library(RColorBrewer)
+library(infer)
+theme_set(theme_classic())
+```
+
+```{r}
+files <- c("../../data/growth_data/growth_rates_20230519.xlsx", "../../data/growth_data/growth_rates_20230524.xlsx", "../../data/growth_data/growth_rates_20230525.xlsx", "../../data/growth_data/growth_rates_20230531.xlsx", "../../data/growth_data/growth_rates_20230602.xlsx")
+merged <- files %>% map_dfr(read_excel, .id="filename", na = "NA")
+
+```
+
+```{r}
+all_growth_data <- merged %>%
+  pivot_longer(cols = contains("25"), values_to = "OD") %>%
+  separate(col = name,
+           into = c("strain", "stress"),
+           sep = "_") %>%
+  group_by(filename) %>%
+  mutate(elapsed_mins = (clock_time[[1]] %--% clock_time) / dminutes(1)) %>%
+  ungroup() %>%
+  select(trial = filename, elapsed_mins, strain, stress, OD) %>%
+  mutate(
+    strain = fct_recode(strain, `wild-type` = "2537", `rpoS` = "2545"),
+    stress = fct_relevel(stress, "nostress", "salt"),
+    stress = fct_recode(
+      stress,
+      `Entry into stationary phase` = "nostress",
+      `High osmolarity` = "salt",
+      `Low temp` = "cold"
+    ),
+    trial = paste("Replicate", trial)
+  )
+  
+```
+
+```{r}
+# Some quick checks on data quality
+# View(all_growth_data)
+# all_growth_data %>% 
+#   group_by(trial) %>% 
+#   skim()
+```
+
+
+Plot all of the data
+```{r}
+all_growth_data %>% 
+  ggplot(aes(x = elapsed_mins, y = OD, col = strain)) +
+  geom_point(na.rm = TRUE) +
+  geom_smooth(se = FALSE, na.rm = TRUE) +
+  scale_y_log10() +
+  facet_grid(stress~trial, scales = "free", space = "free") +
+  scale_color_brewer(palette = "Set1") +
+  labs(x = "time (mins)",
+       y = expression(OD[600])) +
+  theme(strip.text.x = element_blank()) +
+    NULL
+
+ggsave("../../outputs/supplemental/all_growth_curves.pdf", width = 10, height = 6)
+```
+
+
+Fit the Gomperz 3 param model to the cold data
+```{r}
+p <- c(y0 = 0.3, mumax = .001, K = 1, lambda = 100)
+cold_gompertz3 <- all_growth_data %>% 
+  filter(stress == "Low temp") %>% 
+  all_growthmodels(OD ~ grow_gompertz3(time = elapsed_mins, parms) |stress + trial + strain, data = ., p = p)
+
+cold_estimates_raw <- coef(cold_gompertz3)
+```
+
+
+Fit the Gomperz 3 param model to the salt data
+```{r}
+p <- c(y0 = 0.3, mumax = .01, K = 1, lambda = 100)
+salt_gompertz3 <- all_growth_data %>% 
+  filter(stress == "High osmolarity") %>% 
+  all_growthmodels(OD ~ grow_gompertz3(time = elapsed_mins, parms) |stress + trial + strain, data = ., p = p)
+
+salt_estimates_raw <- coef(salt_gompertz3)
+```
+
+Fit the logistic model to the no stress data. I use the logistic instead of the gomperz 3 param model because there is no lag time in this growth experiment. Visiually, the logistic fits better than the gomperz 2 param model.
+
+```{r}
+p <- c(y0 = 0.3, mumax = .02, K = 6)
+
+nostress_logistic <- all_growth_data %>% 
+  filter(stress == "Entry into stationary phase") %>% 
+  all_growthmodels(OD ~ grow_logistic(time = elapsed_mins, parms) |stress + trial + strain, data = ., p = p)
+
+nostress_estimates_raw <- coef(nostress_logistic)
+```
+
+# Analysis of growth params
+
+```{r}
+salt_estimates <- salt_estimates_raw %>% 
+  as_tibble(rownames = "rowname") %>% 
+  separate(col = rowname, into =c("stress", "replicate", "strain"), sep = ":") %>% 
+  mutate(doubling_time = log(2)/mumax)
+```
+
+For salt, I'm interested in if there is a difference in lag (lambda) or in growth rate (mumax). I'm not interested in K (carrying capacity) because cells don't approach K over this experiment. 
+```{r}
+salt_params_summary <- salt_estimates %>% 
+  group_by(strain) %>% 
+  summarise(n = n(),
+            mean_lambda = mean(lambda),
+            se_lambda = sd(lambda)/n,
+            mean_doubling_time = mean(doubling_time),
+            se_doubling_time = sd(doubling_time)/n
+            )
+
+write_tsv(salt_params_summary, "../../outputs/growth_curves/salt_growth_params.tsv")
+```
+
+
+```{r}
+set.seed(2023)
+
+salt_diff_mean <- salt_estimates %>% 
+  specify(doubling_time ~ strain) %>% 
+  calculate(stat = "diff in means", order = c("wild-type", "rpoS"))
+
+salt_doubling_pval <- salt_estimates %>% 
+  specify(doubling_time ~ strain) %>% 
+  hypothesise(null = "independence") %>% 
+  generate(reps = 10000, type = "permute") %>% 
+  calculate(stat = "diff in means", order = c("wild-type", "rpoS")) %>% 
+  get_p_value(obs_stat = salt_diff_mean, direction = "two-sided")
+
+salt_diff_lag <- salt_estimates %>% 
+  specify(lambda ~ strain) %>% 
+  calculate(stat = "diff in means", order = c("wild-type", "rpoS"))
+
+salt_lambda_pval <- salt_estimates %>% 
+  specify(lambda ~ strain) %>% 
+  hypothesise(null = "independence") %>% 
+  generate(reps = 10000, type = "permute") %>% 
+  calculate(stat = "diff in means", order = c("wild-type", "rpoS")) %>% 
+  get_p_value(obs_stat = salt_diff_lag, direction = "two-sided")
+
+salt_doubling_pval
+salt_lambda_pval
+```
+
+
+
+
+```{r}
+cold_estimates <- cold_estimates_raw %>% 
+  as_tibble(rownames = "rowname") %>% 
+  separate(col = rowname, into =c("stress", "replicate", "strain"), sep = ":") %>% 
+  mutate(doubling_time = log(2)/mumax)
+```
+
+For cold, I'm interested in if there is a difference in lag (lambda) or in growth rate (mumax). I'm not interested in K (carrying capicity) because cells don't approach K over this experiment. 
+```{r}
+cold_params_summary <- cold_estimates %>% 
+  group_by(strain) %>% 
+  summarise(n = n(),
+            mean_lambda = mean(lambda),
+            se_lambda = sd(lambda)/n,
+            mean_doubling_time = mean(doubling_time),
+            se_doubling_time = sd(doubling_time)/n
+            )
+write_tsv(cold_params_summary, "../../outputs/growth_curves/cold_growth_params.tsv")
+```
+
+
+```{r}
+set.seed(2023)
+cold_diff_mean <- cold_estimates %>% 
+  specify(doubling_time ~ strain) %>% 
+  calculate(stat = "diff in means", order = c("wild-type", "rpoS"))
+
+cold_doubling_pval <- cold_estimates %>% 
+  specify(doubling_time ~ strain) %>% 
+  hypothesise(null = "independence") %>% 
+  generate(reps = 10000, type = "permute") %>% 
+  calculate(stat = "diff in means", order = c("wild-type", "rpoS")) %>% 
+  get_p_value(obs_stat = cold_diff_mean, direction = "two-sided")
+
+cold_diff_lag <- cold_estimates %>% 
+  specify(lambda ~ strain) %>% 
+  calculate(stat = "diff in means", order = c("wild-type", "rpoS"))
+
+cold_lambda_pval <- cold_estimates %>% 
+  specify(lambda ~ strain) %>% 
+  hypothesise(null = "independence") %>% 
+  generate(reps = 10000, type = "permute") %>% 
+  calculate(stat = "diff in means", order = c("wild-type", "rpoS")) %>% 
+  get_p_value(obs_stat = cold_diff_lag, direction = "two-sided")
+
+cold_doubling_pval
+cold_lambda_pval
+
+```
+
+
+
+## No stress condition
+
+```{r}
+nostress_estimates <- nostress_estimates_raw %>% 
+  as_tibble(rownames = "rowname") %>% 
+  separate(col = rowname, into =c("stress", "replicate", "strain"), sep = ":") %>% 
+  mutate(doubling_time = log(2)/mumax)
+```
+
+For the no added stress, I'm interested in if there is a difference in growth rate (mumax) or carrying capacity (K). There is no lag-time in this model.
+```{r}
+nostress_params_summary <- nostress_estimates %>% 
+  group_by(strain) %>% 
+  summarise(n = n(),
+            mean_K = mean(K),
+            se_K = sd(K)/n,
+            mean_doubling_time = mean(doubling_time),
+            se_doubling_time = sd(doubling_time)/n
+            )
+
+write_tsv(nostress_params_summary, "../../outputs/growth_curves/nostress_growth_params.tsv")
+```
+
+
+```{r}
+set.seed(2023)
+nostress_diff_mean <- nostress_estimates %>% 
+  specify(doubling_time ~ strain) %>% 
+  calculate(stat = "diff in means", order = c("wild-type", "rpoS"))
+
+nostress_doubling_pval <- nostress_estimates %>% 
+  specify(doubling_time ~ strain) %>% 
+  hypothesise(null = "independence") %>% 
+  generate(reps = 10000, type = "permute") %>% 
+  calculate(stat = "diff in means", order = c("wild-type", "rpoS")) %>% 
+  get_p_value(obs_stat = nostress_diff_mean, direction = "two-sided")
+
+cold_diff_K <- nostress_estimates %>% 
+  specify(K ~ strain) %>% 
+  calculate(stat = "diff in means", order = c("wild-type", "rpoS"))
+
+nostress_K_pval <- nostress_estimates %>% 
+  specify(K ~ strain) %>% 
+  hypothesise(null = "independence") %>% 
+  generate(reps = 10000, type = "permute") %>% 
+  calculate(stat = "diff in means", order = c("wild-type", "rpoS")) %>% 
+  get_p_value(obs_stat = cold_diff_K, direction = "two-sided")
+
+nostress_doubling_pval
+nostress_K_pval
+```
+
+FDR adjustment of all p-values
+```{r}
+
+p.adjust(c(nostress_doubling_pval, nostress_K_pval, salt_doubling_pval, salt_lambda_pval, cold_doubling_pval, cold_lambda_pval), method = "BH") %>% round(2)
+
+```
+
+
+Create a pdf of all individual model fits
+```{r eval=FALSE, include=FALSE}
+pdf(file = "../../outputs/supplemental/all_model_fits.pdf", width = 20, height = 10)
+par(mfrow=c(2,5))
+plot(nostress_logistic, log = "y")
+plot(salt_gompertz3, log = "y")
+plot(cold_gompertz3, log = "y")
+dev.off()
+```
+
