@@ -1,14 +1,14 @@
 ---
 title: "western figure"
-author: "Josephine Adams"
-date: "07/07/2022"
+author: "Josephine Adams & Dan Stoebel"
+date: "06/02/2022"
 output: html_document
 ---
 This file makes the plot for figure 1 in the paper which is the western blot plot including normalized RpoS levels and OD plot. It requires the set up that is done in `westernAnalysisSetUp.R`
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(patchwork)
-
+library(scales)
 
 #This loads all the set up for making the RpoS levels figure & includes the needed libraries
 source("../helper functions/westernAnalysisSetUp.R") 
@@ -21,8 +21,15 @@ faceted plot
 all_western_data <- merge(SP_allData,cold_allData, all = TRUE) %>% 
   merge(osmo_allData, all = TRUE) %>% 
   select(Trial, Time, OD, Genotype, Experiment, normalize, RpoSratio, exp_length)
-#dim(allData)
 #plot with facet
+
+##Create a new scale so that instead of 1e-01, I'll get 10^-1 with proper exponentiaion.
+# Based on https://stackoverflow.com/questions/10762287/how-can-i-format-axis-labels-with-exponents-with-ggplot2-and-scales
+
+scientific_10 <- function(x) {
+  parse(text=gsub("1e", " 10^", scales::scientific_format()(x)))
+}
+
 rpoS_plot <- all_western_data %>%
   filter(Genotype == "wt") %>%
   #order the stresses as desired
@@ -35,7 +42,7 @@ rpoS_plot <- all_western_data %>%
   ggplot(aes(x = Time, y = RpoSratio)) +
   geom_point(alpha = 0.3) +
   facet_wrap( ~ Experiment , scales = "free_x") + #scales are different for SP/cold & osmo
-  scale_y_log10() +
+  scale_y_log10(label=scientific_10) +
   geom_smooth(se = FALSE)  +
   xlab("Time (mins)") +
   ylab("Normalized RpoS")
@@ -72,11 +79,16 @@ od_plot
 
 ```{r}
 #make the two plots into one jpeg with lettered tags
+
+    # Maximum figure width: 6.875 inches (ca. 17.4 cm)
+    # Maximum figure height: 9.0625 inches (23.0 cm)
+    # 1,200 dpi for line art
+
 library(patchwork)
 rpoS_plot / od_plot + plot_annotation(tag_levels = 'A')
 
 
-ggsave("../../outputs/graphs/1_rpos_OD_levels_plot.jpeg", width = 6, height = 6)
+ggsave("../../outputs/graphs/1_rpos_OD_levels_plot.tiff", width = 6.875, height = 6.875, dpi = 1200)
 ```
 
 ###Find the time with max RpoS value

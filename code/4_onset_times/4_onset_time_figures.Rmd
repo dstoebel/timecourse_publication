@@ -164,7 +164,7 @@ rpoS_and_med_gene_onset
 ```{r}
 allOnset_annotated_flipped / rpoS_and_med_gene_onset + plot_annotation(tag_levels = 'A') + plot_layout(height = c(4,4))
 
-ggsave("../../outputs/graphs/4_onset_times_conditions.jpg")
+ggsave("../../outputs/graphs/4_onset_times_conditions.tiff", width = 6.825, height = 5.5, dpi = 1200)
 ```
 
 
@@ -209,7 +209,7 @@ sens_onset_facet_annotated_flipped <- sens_onset_facet_flipped +
 sens_onset_facet_annotated_flipped 
 
 
-ggsave("../../outputs/graphs/5_onset_times_sensitivity.jpeg")
+ggsave("../../outputs/graphs/5_onset_times_sensitivity.tiff", width = 6.875, height = 5.5, dpi = 1200)
 
 ```
 
@@ -475,8 +475,8 @@ onset_osmo_cold <- gene_onset_sensitivity %>%
 
 onset_sp_osmo + onset_sp_cold + onset_osmo_cold
 
-ggsave("../../outputs/graphs/6_correlations.png", width = 10, height = 5)
-
+#ggsave("../../outputs/graphs/6_correlations.png", width = 10, height = 5)
+ggsave("../../outputs/graphs/6_correlations.tiff", width = 6.825, height = 3.5, dpi = 1200)
 ```
 
 
