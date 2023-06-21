@@ -447,7 +447,7 @@ onset_sp_osmo <- gene_onset_sensitivity %>%
   pivot_wider(names_from = Experiment, values_from = value) %>% 
   filter(!is.na(`Stationary Phase`), !is.na(`High Osmolarity`)) %>% 
   ggplot() +
-  geom_point(aes(x = `Stationary Phase`, y = `High Osmolarity`)) +  
+  geom_point(aes(x = `Stationary Phase`, y = `High Osmolarity`), alpha = 0.3) +  
   xlab("Onset time (mins) \n in Stationary Phase") +
   ylab("Onset Time (mins) in High Osmolarity") +
   xlim(0,305) +
@@ -457,7 +457,7 @@ onset_sp_cold <- gene_onset_sensitivity %>%
   pivot_wider(names_from = Experiment, values_from = value) %>% 
   filter(!is.na(`Stationary Phase`), !is.na(`Low Temperature`)) %>% 
   ggplot() +
-  geom_point(aes(x = `Stationary Phase`, y = `Low Temperature`)) +  
+  geom_point(aes(x = `Stationary Phase`, y = `Low Temperature`), alpha = 0.3) +  
   xlab("Onset time (mins) \n in Stationary Phase") +
   ylab("Onset Time (mins) in Low Temperature") +
   labs(tag = "B") 
@@ -466,7 +466,7 @@ onset_osmo_cold <- gene_onset_sensitivity %>%
   pivot_wider(names_from = Experiment, values_from = value) %>% 
     filter(!is.na(`High Osmolarity`), !is.na(`Low Temperature`)) %>% 
   ggplot() +
-  geom_point(aes(x = `High Osmolarity`, y = `Low Temperature`)) +  
+  geom_point(aes(x = `High Osmolarity`, y = `Low Temperature`), alpha = 0.3) +  
   xlab("Onset Time (mins) \n in High Osmolarity") +
   ylab("Onset time (mins) in Low Temperature") +
   labs(tag = "C") 
@@ -475,7 +475,7 @@ onset_osmo_cold <- gene_onset_sensitivity %>%
 
 onset_sp_osmo + onset_sp_cold + onset_osmo_cold
 
-#ggsave("../../outputs/graphs/6_correlations.png", width = 10, height = 5)
+ggsave("../../outputs/graphs/6_correlations.png", width = 10, height = 5)
 ggsave("../../outputs/graphs/6_correlations.tiff", width = 6.825, height = 3.5, dpi = 1200)
 ```
 
