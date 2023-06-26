@@ -91,7 +91,7 @@ Model_ambig
 
 sigmoidal_example / double_sigmoidal_example / Model_ambig + plot_annotation(tag_levels = 'A')
 
-ggsave("../../outputs/graphs/3_examples.tiff", width = 6.875, height = 9, dpi = 1200)
+ggsave("../../outputs/graphs/3_examples.tiff", width = 6, height = 6, dpi = 300)
 
 
 ```
