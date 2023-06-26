@@ -2,7 +2,11 @@
 
 
 
-[![DOI](https://zenodo.org/badge/599289090.svg)](https://zenodo.org/badge/latestdoi/599289090)
+
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8083605.svg)](https://doi.org/10.5281/zenodo.8083605)
+
+
 
 
 ## Quick Start: 
